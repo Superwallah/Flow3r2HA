@@ -1,0 +1,13 @@
+[app]
+name = "flow3r2HA-MQTT"
+menu = "Apps"
+
+[entry]
+class = "MqttHaApp"
+
+[metadata]
+author = "superwallah"
+license = "LGPL-3.0-only"
+url = "https://flow3r.garden"
+description = "Home Assistant connection via MQTT: LEDs (RGB+Brightness) und Petals (x/y/raw_cap)"
+version = 1
