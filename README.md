@@ -11,3 +11,9 @@ You need:
 See INSTALLATION.MD for details
 
 .... work in progress .... pull requests appreciated...
+
+
+## known issues
+
+* LED cannot be switched off yet, off switches to white
+* entity in HA only allow on/off, no clor change yet
