@@ -21,7 +21,18 @@ try:
 except ImportError:
     import json
 
+from struct import pack
 from umqtt.simple import MQTTClient
+
+class MQTTClientWithTimeout(MQTTClient):
+    def connect(self, clean_session=True):
+        # Call parent connect but add timeout to socket
+        super().connect(clean_session)
+        if hasattr(self, 'sock') and self.sock:
+            try:
+                self.sock.settimeout(10)
+            except Exception:
+                pass
 
 from . import config  # config.py with MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS
 
@@ -117,7 +128,7 @@ class MqttHaApp(Responder):
     def _mqtt_connect(self) -> bool:
         """Connect to MQTT broker"""
         try:
-            self._mqtt = MQTTClient(
+            self._mqtt = MQTTClientWithTimeout(
                 client_id=DEVICE_ID.encode(),
                 server=config.MQTT_HOST,
                 port=config.MQTT_PORT,
@@ -136,15 +147,15 @@ class MqttHaApp(Responder):
             self._mqtt.connect()
             self._mqtt.publish(self._avail_topic(), b"online", retain=True)
 
-            # Subscribe LED command topics
-            for i in range(LED_COUNT):
-                self._mqtt.subscribe(self._led_cmd_topic(i))
+            # Subscribe to LED command topics with wildcard
+            self._mqtt.subscribe(TOPIC_BASE + b"/led/+/set")
 
             self._connected_mqtt = True
             self._backoff_ms = 1000
             return True
         except Exception as e:
-            self._status = f"mqtt err: {str(e)[:20]}"
+            err_msg = str(e)
+            self._status = f"{type(e).__name__}: {err_msg[:40]}"
             return False
 
     def _safe_pub(self, topic: bytes, payload: bytes, retain: bool = False):
@@ -199,34 +210,16 @@ class MqttHaApp(Responder):
                 "unique_id": f"{DEVICE_ID}_led_{i}",
                 "device": dev,
 
-                # Discovery topics als STRING
+                "schema": "json",
                 "command_topic": f"flow3r/{DEVICE_ID}/led/{i}/set",
                 "state_topic":   f"flow3r/{DEVICE_ID}/led/{i}/state",
+
                 "availability_topic": f"flow3r/{DEVICE_ID}/availability",
                 "payload_available": "online",
                 "payload_not_available": "offline",
 
-                # => sorgt dafür, dass HA den Farbwähler zeigt
-                "supported_color_modes": ["rgb"],
-                "brightness": True,
-
-                # JSON rein/raus über Templates (robust)
-                "command_template": (
-                    '{"state":"{{ value }}",'
-                    '"brightness":{{ brightness | default(255) }},'
-                    '"color":{"r":{{ red | default(255) }},'
-                            '"g":{{ green | default(255) }},'
-                            '"b":{{ blue | default(255) }}}}'
-                    '}'
-                ),
-
-                "state_value_template": "{{ value_json.state }}",
-                "brightness_value_template": "{{ value_json.brightness }}",
-                "red_value_template": "{{ value_json.color.r }}",
-                "green_value_template": "{{ value_json.color.g }}",
-                "blue_value_template": "{{ value_json.color.b }}",
+                "supported_color_modes": ["rgb"],                
             }
-
 
             disc_topic = f"homeassistant/light/{DEVICE_ID}/led_{i}/config"
             self._mqtt.publish(disc_topic, json.dumps(cfg).encode(), retain=True)
@@ -258,15 +251,17 @@ class MqttHaApp(Responder):
     # ---------- LED control ----------
     def _apply_led(self, i: int, r255: int, g255: int, b255: int, br255: int):
         """Apply LED color and brightness to hardware"""
-        # Mapping: brightness -> alpha (0..1) in set_rgba
-        a = clamp01(br255 / 255.0)
-        r = clamp01(r255 / 255.0)
-        g = clamp01(g255 / 255.0)
-        b = clamp01(b255 / 255.0)
 
-        leds.set_rgba(i, r, g, b, a)  # per LED RGB + "brightness" via alpha
+        scale = clamp01(br255 / 255.0)
+
+        r = clamp01((r255 / 255.0) * scale)
+        g = clamp01((g255 / 255.0) * scale)
+        b = clamp01((b255 / 255.0) * scale)
+
+        leds.set_rgb(i, r, g, b)
         leds.update()
 
+        # gemerkte Wunschfarbe beibehalten
         self._led_r[i] = r255
         self._led_g[i] = g255
         self._led_b[i] = b255
@@ -305,10 +300,19 @@ class MqttHaApp(Responder):
         except Exception:
             return
 
-        # Read JSON payload
         try:
-            data = json.loads(msg.decode())
+            raw = msg.decode().strip()
         except Exception:
+            return
+
+        # JSON oder Plaintext ON/OFF akzeptieren
+        try:
+            if raw == "ON" or raw == "OFF":
+                data = {"state": raw}
+            else:
+                data = json.loads(raw)
+        except Exception:
+            self._status = "bad payload"
             return
 
         state = str(data.get("state", "ON")).upper()
@@ -328,10 +332,7 @@ class MqttHaApp(Responder):
         br = max(0, min(255, br))
         
         if state == "OFF":
-            # hart aus: Farbe und Helligkeit auf 0
-            r = 0
-            g = 0
-            b = 0
+            # hart aus: Helligkeit auf 0
             br = 0
  
         # Apply LED changes
@@ -379,8 +380,9 @@ class MqttHaApp(Responder):
         """Draw status on screen"""
         ctx.rgb(0, 0, 0).rectangle(-120, -120, 240, 240).fill()
         ctx.rgb(1, 1, 1)
-
-        ctx.move_to(-110, -50)
+        ctx.font_size = 12
+        
+        ctx.move_to(-100, -50)
         ctx.text(f"flow3r -> HA MQTT")
 
         ctx.move_to(-110, -25)
@@ -392,16 +394,22 @@ class MqttHaApp(Responder):
         ctx.move_to(-110, 25)
         ctx.text(f"{self._status}")
 
-        ctx.move_to(-110, 50)
+        ctx.move_to(-100, 50)
         ctx.text(f"right button to exit")
 
     def think(self, ins, delta_ms: int):
         """Main logic loop"""
         now = time.ticks_ms()
         
-        # Exit app on button press
-        if ins.buttons.os:
-            return False
+        # Debug button values
+        # self._status = f"app:{ins.buttons.app} os:{ins.buttons.os}"
+        
+        # exit app on OS button (right) press
+        try:
+            if ins.buttons.os == 1 or ins.buttons.os == 2 or ins.buttons.os:
+                return False
+        except:
+            pass
 
         # WiFi must be managed by firmware
         if not wifi_is_connected():
@@ -415,15 +423,12 @@ class MqttHaApp(Responder):
         # MQTT connect/reconnect with backoff
         if not self._connected_mqtt:
             if time.ticks_diff(now, self._next_mqtt_try_ms) >= 0:
-                try:
-                    self._status = "connecting MQTT..."
-                    if self._mqtt_connect():
-                        self._status = "MQTT connected"
-                    else:
-                        raise Exception("connect failed")
-                except Exception as e:
+                self._status = "connecting MQTT..."
+                if self._mqtt_connect():
+                    self._status = "MQTT connected"
+                else:
                     self._mqtt_disconnect()
-                    self._status = f"MQTT fail (retry)"
+                    # status already set by _mqtt_connect to error message
                     self._backoff_ms = min(self._backoff_ms * 2, 30_000)
                     self._next_mqtt_try_ms = time.ticks_add(now, self._backoff_ms)
             return
