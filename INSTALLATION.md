@@ -7,12 +7,12 @@ Follow these steps to get your flow3r badge connected to Home Assistant:
 ### Step 1: Prepare Home Assistant
 
 1. **Install Mosquitto MQTT Broker**
-   - Navigate to: Settings → Add-ons → Add-on Store
+   - Navigate to: Settings → Apps → Install App
    - Search for "Mosquitto broker"
    - Click Install and wait for completion
    
 2. **Configure Mosquitto**
-   - Go to the Mosquitto broker add-on
+   - Go to the Mosquitto broker app
    - Click on the "Configuration" tab
    - Add a user (example):
    ```yaml

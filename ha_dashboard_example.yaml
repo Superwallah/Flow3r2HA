@@ -1,0 +1,100 @@
+# Home Assistant Dashboard Configuration for flow3r Badge
+# Add this to your dashboard YAML or use the UI to create cards
+
+# Example 1: Grid Card showing all LEDs
+type: grid
+title: flow3r LEDs
+columns: 5
+cards:
+  - type: light
+    entity: light.flow3r_badge_01_led_0
+    name: LED 0
+  - type: light
+    entity: light.flow3r_badge_01_led_1
+    name: LED 1
+  - type: light
+    entity: light.flow3r_badge_01_led_2
+    name: LED 2
+  # ... repeat for all 40 LEDs (0-39)
+  - type: light
+    entity: light.flow3r_badge_01_led_39
+    name: LED 39
+
+---
+
+# Example 2: Master Control Card for all LEDs
+type: vertical-stack
+title: flow3r Master Control
+cards:
+  - type: entities
+    title: LED Group Controls
+    entities:
+      - entity: light.flow3r_badge_01_led_0
+        name: All LEDs (use as master)
+      - type: section
+  - type: light
+    entity: light.flow3r_badge_01_led_0
+    name: Master LED Control
+
+---
+
+# Example 3: Petal Sensors Display
+type: entities
+title: flow3r Petals
+entities:
+  - entity: sensor.flow3r_badge_01_petal_0
+    name: Petal 0
+    secondary_info: last-changed
+  - entity: sensor.flow3r_badge_01_petal_1
+    name: Petal 1
+    secondary_info: last-changed
+  - entity: sensor.flow3r_badge_01_petal_2
+    name: Petal 2
+    secondary_info: last-changed
+  - entity: sensor.flow3r_badge_01_petal_3
+    name: Petal 3
+    secondary_info: last-changed
+  - entity: sensor.flow3r_badge_01_petal_4
+    name: Petal 4
+    secondary_info: last-changed
+  - entity: sensor.flow3r_badge_01_petal_5
+    name: Petal 5
+    secondary_info: last-changed
+  - entity: sensor.flow3r_badge_01_petal_6
+    name: Petal 6
+    secondary_info: last-changed
+  - entity: sensor.flow3r_badge_01_petal_7
+    name: Petal 7
+    secondary_info: last-changed
+  - entity: sensor.flow3r_badge_01_petal_8
+    name: Petal 8
+    secondary_info: last-changed
+  - entity: sensor.flow3r_badge_01_petal_9
+    name: Petal 9
+    secondary_info: last-changed
+
+---
+
+# Example 4: Advanced Petal Card with Attributes
+type: markdown
+title: Petal 0 Details
+content: |
+  **Capacitance:** {{ states('sensor.flow3r_badge_01_petal_0') }}
+  **Pressed:** {{ state_attr('sensor.flow3r_badge_01_petal_0', 'pressed') }}
+  **X Position:** {{ state_attr('sensor.flow3r_badge_01_petal_0', 'x') }}
+  **Y Position:** {{ state_attr('sensor.flow3r_badge_01_petal_0', 'y') }}
+
+---
+
+# Example 5: Compact LED Grid (10x4 layout)
+type: custom:auto-entities
+card:
+  type: grid
+  columns: 4
+  square: false
+filter:
+  include:
+    - entity_id: light.flow3r_badge_01_led_*
+  exclude: []
+sort:
+  method: entity_id
